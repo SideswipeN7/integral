@@ -6,7 +6,7 @@ namespace MonteCarlo
     {
         private static void Main(string[] args)
         {
-            int accuracy = 5000;
+            int accuracy = 50000000;
             Integral integral = new Integral()
             {
                 StartX = -10,
@@ -17,24 +17,17 @@ namespace MonteCarlo
                 func = (x) => (Math.Pow(x,12) + Math.Pow(x, -4/5) * x + 3)
             };
 
+
+            Console.WriteLine("==================================================");
             Console.WriteLine("Początek obliczeń");
-            Console.WriteLine("==================================================");
-
-            Console.WriteLine("Liczenie całki");
-            Console.WriteLine("Jeden wątek");
-            integral.Calculate();
-            Console.WriteLine($"Wartość: {integral.Value}");
-            Console.WriteLine($"Czas obliczeń: {integral.CalculationTime()}");
-
-            Console.WriteLine("==================================================");
-
-            Console.WriteLine($"{accuracy} wątków");
-            integral.CalculateParalel();
-            Console.WriteLine($"Wartość: {integral.Value}");
-            Console.WriteLine($"Czas obliczeń: {integral.CalculationTime()}");
-
-            Console.WriteLine("==================================================");
+            //integral.Compute(ComputeType.SingleThread);
+            //integral.Compute(ComputeType.ParallelLock);
+            integral.Compute(ComputeType.ParallelArray);
+            //integral.Compute(ComputeType.ParallelFor);
             Console.WriteLine("Koniec obliczeń");
+            Console.WriteLine("==================================================");
+
+
             Console.ReadKey();
         }
     }
