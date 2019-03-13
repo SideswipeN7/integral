@@ -6,9 +6,8 @@ namespace MonteCarlo
     internal enum ComputeType
     {
         SingleThread,
-        ParallelArray,
+        ParallelAsync,
         ParallelLock,
-        ParallelFor,
     }
 
     internal class Integral
@@ -19,15 +18,30 @@ namespace MonteCarlo
         public float EndY { get; set; }
         public float StartY { get; set; }
         public int Accuracy { get; set; }
-        private float value_;
         public float Value { get => value_; }
+        private float value_;
+        private int pointsIn_;
         public Func<double, double> func { get; set; }
         private DateTime startTime_;
         private DateTime endTime_;
 
-        private double RandomPoint() => StartX + random_.NextDouble() * (EndX - StartX);
+        private double RandomPointX() => StartX + random_.NextDouble() * (EndX - StartX);
 
-        private int funcIn(double x, double y)
+        private double RandomPointY() => StartY + random_.NextDouble() * (EndY - StartY);
+
+        private async Task<double> AsyncRandomPointX()
+        {
+            double rand = await Task.FromResult(random_.NextDouble());
+            return StartX + rand * (EndX - StartX);
+        }
+
+        private async Task<double> AsyncRandomPointY()
+        {
+            double rand = await Task.FromResult(random_.NextDouble());
+            return StartY + rand * (EndY - StartY);
+        }
+
+        private int FuncIn(double x, double y)
         {
             if ((y > 0) && (y <= func(x)))
                 return 1;
@@ -36,7 +50,14 @@ namespace MonteCarlo
             return 0;
         }
 
-        private int mainCalcFunc() => funcIn(RandomPoint(), RandomPoint());
+        private int MainCalcFunc() => FuncIn(RandomPointX(), RandomPointY());
+
+        private async Task<int> AsyncMainCalcFunc()
+        {
+            double x = await AsyncRandomPointX();
+            double y = await AsyncRandomPointY();
+            return FuncIn(x, y);
+        }
 
         private float CalculateValue(int pointsIn) => (pointsIn / (float)Accuracy) * ((EndX - StartX) * (EndY - StartY));
 
@@ -57,7 +78,7 @@ namespace MonteCarlo
             startTime_ = DateTime.Now;
             for (int i = 0; i < Accuracy; i++)
             {
-                pointsIn += mainCalcFunc();
+                pointsIn += MainCalcFunc();
             }
             value_ = CalculateValue(pointsIn);
             endTime_ = DateTime.Now;
@@ -79,96 +100,79 @@ namespace MonteCarlo
                     break;
 
                 case ComputeType.ParallelLock:
-                    CalculateParallelLock();
+                    StartParallelLock();
                     break;
 
-                case ComputeType.ParallelArray:
-                    StartParallelArray();
-                    break;
-
-                case ComputeType.ParallelFor:
-                    CalculateParallelFor();
+                case ComputeType.ParallelAsync:
+                    StartParallelAsync();
                     break;
             }
-            Console.WriteLine($"Wartość: {Value}");
+            Console.WriteLine($"Wartość: {value_}");
             Console.WriteLine($"Czas obliczeń: {CalculationTime()}");
             Console.WriteLine("==================================================");
         }
 
-        private void CalculateParallelLock()
-        {
-            int pointsIn = 0;
-            var data = GetPararellCalculationData();
-            Task[] taskArray = new Task[data.Item1];
-            int[] values = new int[data.Item1];
-            object _lock = new object();
-            startTime_ = DateTime.Now;
-            for (int i = 0; i < taskArray.Length; ++i)
-            {
-                taskArray[i] = Task.Factory.StartNew((object obj) =>
-                {
-                    int value = 0;
-                    for (int k = 0; k <= data.Item2; ++k)
-                    {
-                        value += mainCalcFunc();
-                    }
-                    lock (obj)
-                    {
-                        pointsIn += value;
-                    }
-                }, _lock);
-            }
-            Task.WaitAll(taskArray);
-            value_ = CalculateValue(pointsIn);
-            endTime_ = DateTime.Now;
-        }
-
-        private void StartParallelArray()
+        private void StartParallelLock()
         {
             int pointsIn = 0;
             var data = GetPararellCalculationData();
             int iterations = data.Item2;
             int size = data.Item1;
             Task[] taskArray = new Task[size];
-            int[] values = new int[size];
+            object _lock = new object();
+            pointsIn_ = 0;
+            startTime_ = DateTime.Now;
+            for (int i = 0; i < size; ++i)
+            {
+                taskArray[i] = CalculateParallelLock(iterations, _lock);
+            }
+            Task.WaitAll(taskArray);
+            value_ = CalculateValue(pointsIn_);
+            endTime_ = DateTime.Now;
+        }
+
+        private void StartParallelAsync()
+        {
+            int pointsIn = 0;
+            var data = GetPararellCalculationData();
+            int iterations = data.Item2;
+            int size = data.Item1;
+            Task[] taskArray = new Task[size];
             startTime_ = DateTime.Now;
             for (int i = 0; i < size; i++)
             {
-                taskArray[i] = Task.Factory.StartNew(async (x) =>
-                {
-                    values[(int)x] = await CalculateParallelArray(iterations);
-                }, i);
+                taskArray[i] = CalculateParallelAsync(iterations).ContinueWith(x =>
+                    {
+                        pointsIn += x.Result;
+                    });
             }
-            
+
             Task.WaitAll(taskArray);
-            foreach (int v in values)
-            {
-                pointsIn += v;
-            }
             value_ = CalculateValue(pointsIn);
             endTime_ = DateTime.Now;
         }
 
-        private void CalculateParallelFor()
-        {
-            int pointsIn = 0;
-            startTime_ = DateTime.Now;
-            Parallel.For(0, Accuracy, x =>
-             {
-                 pointsIn += mainCalcFunc();
-             });
-            value_ = CalculateValue(pointsIn);
-            endTime_ = DateTime.Now;
-        }
-
-        private async Task<int> CalculateParallelArray(int size)
+        private async Task<int> CalculateParallelAsync(int size)
         {
             int value = 0;
             for (int k = 0; k <= size; ++k)
             {
-                value +=  mainCalcFunc();
+                value += await AsyncMainCalcFunc();
             }
             return value;
+        }
+
+        private async Task CalculateParallelLock(int size, object lockObj)
+        {
+            int value = 0;
+            for (int k = 0; k <= size; ++k)
+            {
+                value += await AsyncMainCalcFunc();
+            }
+            lock (lockObj)
+            {
+                pointsIn_ += value;
+            }
         }
     }
 }
