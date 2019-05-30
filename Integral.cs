@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MonteCarlo
@@ -8,6 +9,7 @@ namespace MonteCarlo
         SingleThread,
         ParallelAsync,
         ParallelLock,
+        MultiThread,
     }
 
     internal class Integral
@@ -19,6 +21,7 @@ namespace MonteCarlo
         public float StartY { get; set; }
         public int Accuracy { get; set; }
         public float Value { get => value_; }
+
         private float value_;
         private int pointsIn_;
         public Func<double, double> func { get; set; }
@@ -28,7 +31,22 @@ namespace MonteCarlo
         private double RandomPointX() => StartX + random_.NextDouble() * (EndX - StartX);
 
         private double RandomPointY() => StartY + random_.NextDouble() * (EndY - StartY);
-
+        private double SecureRandomX(object _lock)
+        {
+            lock (_lock)
+            {
+                double rand = random_.NextDouble();
+                return StartX + rand * (EndX - StartX);
+            }
+        }
+        private double SecureRandomY(object _lock)
+        {
+            lock (_lock)
+            {
+                double rand = random_.NextDouble();
+                return StartY + rand * (EndY - StartY);
+            }
+        }
         private async Task<double> AsyncRandomPointX()
         {
             double rand = await Task.FromResult(random_.NextDouble());
@@ -58,6 +76,12 @@ namespace MonteCarlo
             double y = await AsyncRandomPointY();
             return FuncIn(x, y);
         }
+        private int SercureMainCalcFunc(object _lock)
+        {
+            double x = SecureRandomX(_lock);
+            double y = SecureRandomY(_lock);
+            return FuncIn(x, y);
+        }
 
         private float CalculateValue(int pointsIn) => (pointsIn / (float)Accuracy) * ((EndX - StartX) * (EndY - StartY));
 
@@ -71,24 +95,6 @@ namespace MonteCarlo
             Console.WriteLine($"Próby na rdzeń: {tries}");
             return Tuple.Create(processors, tries);
         }
-
-        private void Calculate()
-        {
-            int pointsIn = 0;
-            startTime_ = DateTime.Now;
-            for (int i = 0; i < Accuracy; i++)
-            {
-                pointsIn += MainCalcFunc();
-            }
-            value_ = CalculateValue(pointsIn);
-            endTime_ = DateTime.Now;
-        }
-
-        public void Compute()
-        {
-            Compute(ComputeType.SingleThread);
-        }
-
         public void Compute(ComputeType type)
         {
             Console.WriteLine("==================================================");
@@ -106,12 +112,71 @@ namespace MonteCarlo
                 case ComputeType.ParallelAsync:
                     StartParallelAsync();
                     break;
+                case ComputeType.MultiThread:
+                    StartMultiThread();
+                    break;
             }
             Console.WriteLine($"Wartość: {value_}");
             Console.WriteLine($"Czas obliczeń: {CalculationTime()}");
             Console.WriteLine("==================================================");
         }
 
+        private void Calculate()
+        {
+            int pointsIn = 0;
+            startTime_ = DateTime.Now;
+            for (int i = 0; i < Accuracy; i++)
+            {
+                pointsIn += MainCalcFunc();
+            }
+            value_ = CalculateValue(pointsIn);
+            endTime_ = DateTime.Now;
+        }
+       
+        private void StartMultiThread()
+        {
+            var data = GetPararellCalculationData();
+            int iterations = data.Item2;
+            int size = data.Item1;
+            startTime_ = DateTime.Now;
+            Thread[] threadArray = new Thread[size];
+            pointsIn_ = 0;
+            object o = new object();
+            for (int i = 0; i < size; ++i)
+            {
+                threadArray[i] = new Thread(() =>
+                {
+                    MultiCalculateAsync(iterations, o);
+                });
+            }
+            foreach (var thread in threadArray)
+            {
+                thread.Start();
+            }
+            foreach (var thread in threadArray)
+            {
+                thread.Join();
+
+            }
+            value_ = CalculateValue(pointsIn_);
+            endTime_ = DateTime.Now;
+
+        }
+        private void MultiCalculateAsync(int iterations, object _lock)
+        {
+            int value = 0;
+            for (int k = 0; k <= iterations; ++k)
+            {
+                value += SercureMainCalcFunc(_lock);
+            }
+            lock (_lock)
+            {
+                pointsIn_ += value;
+            }
+
+        }
+       
+       
         private void StartParallelLock()
         {
             int pointsIn = 0;

@@ -6,7 +6,7 @@ namespace MonteCarlo
     {
         private static void Main(string[] args)
         {
-            int accuracy = 900000000;
+            int accuracy = 9000000;
             Integral integral = new Integral()
             {
                 StartX = -10,
@@ -23,6 +23,7 @@ namespace MonteCarlo
             integral.Compute(ComputeType.SingleThread);
             integral.Compute(ComputeType.ParallelLock);
             integral.Compute(ComputeType.ParallelAsync);
+            integral.Compute(ComputeType.MultiThread);
             Console.WriteLine("Koniec obliczeń");
             Console.WriteLine("==================================================");
 
