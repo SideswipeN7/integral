@@ -4,7 +4,7 @@ namespace MonteCarlo
 {
     internal class Program
     {
-        private static void Main(string[] args)
+        private static void Main()
         {
             int accuracy = 9000000;
             Integral integral = new Integral()
@@ -14,15 +14,15 @@ namespace MonteCarlo
                 StartY = -10,
                 EndY = 10,
                 Accuracy = accuracy,
-                func = (x) => (Math.Pow(x,12) + Math.Pow(x, -4/5) * x + 3)
+                func = (x) => (Math.Pow(x, 12) + Math.Pow(x, -4 / 5) * x + 3)
             };
 
 
             Console.WriteLine("==================================================");
             Console.WriteLine("Początek obliczeń");
             integral.Compute(ComputeType.SingleThread);
-            integral.Compute(ComputeType.ParallelLock);
-            integral.Compute(ComputeType.ParallelAsync);
+            integral.Compute(ComputeType.TaskLock);
+            integral.Compute(ComputeType.TaskAsync);
             integral.Compute(ComputeType.MultiThread);
             Console.WriteLine("Koniec obliczeń");
             Console.WriteLine("==================================================");
