@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -7,8 +8,8 @@ namespace MonteCarlo
     internal enum ComputeType
     {
         SingleThread,
-        TaskAsync,
-        TaskLock,
+        ParallelFor,
+        Task,
         MultiThread,
     }
 
@@ -26,25 +27,18 @@ namespace MonteCarlo
         public Func<double, double> func { get; set; }
         private DateTime startTime_;
         private DateTime endTime_;
+        private Random random_;
 
         //////////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////////////////  Random  ///////////////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////////
-        private double RandomPointX() => StartX + new Random(DateTime.Now.Millisecond).NextDouble() * (EndX - StartX);
+        private double RandomPointX() => RandomPointX(random_);
 
-        private double RandomPointY() => StartY + new Random(DateTime.Now.Millisecond).NextDouble() * (EndY - StartY);
+        private double RandomPointY() => RandomPointY(random_);
 
-        private async Task<double> AsyncRandomPointX()
-        {
-            double rand = await Task.FromResult(new Random(DateTime.Now.Millisecond).NextDouble());
-            return StartX + rand * (EndX - StartX);
-        }
+        private double RandomPointX(Random random) => StartX + random.NextDouble() * (EndX - StartX);
 
-        private async Task<double> AsyncRandomPointY()
-        {
-            double rand = await Task.FromResult(new Random(DateTime.Now.Millisecond).NextDouble());
-            return StartY + rand * (EndY - StartY);
-        }
+        private double RandomPointY(Random random) => StartY + random.NextDouble() * (EndY - StartY);
 
         //////////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////////////  Support Functions  ///////////////////////////////////
@@ -84,12 +78,12 @@ namespace MonteCarlo
                     Calculate();
                     break;
 
-                case ComputeType.TaskLock:
-                    StartTaskLock();
+                case ComputeType.Task:
+                    StartTask();
                     break;
 
-                case ComputeType.TaskAsync:
-                    StartTaskAsync();
+                case ComputeType.ParallelFor://TPL library
+                    StartParallelFor();
                     break;
                 case ComputeType.MultiThread:
                     StartMultiThread();
@@ -103,38 +97,30 @@ namespace MonteCarlo
         //////////////////////////////////////////////////////////////////////////////////////////////
         /////////////////////////////////////////////  Start  ///////////////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////////
-        private void StartTaskAsync()
+        private void StartParallelFor()
         {
-            var data = GetPararellCalculationData();
-            int iterations = data.Item2;
-            int size = data.Item1;
-            Task[] taskArray = new Task[size];
             startTime_ = DateTime.Now;
-            for (int i = 0; i < size; ++i)
-            {
-                taskArray[i] = CalculateTaskAsync(iterations).ContinueWith(x =>
-                    {
-                        pointsIn_ += x.Result;
-                    });
-            }
-            Task.WaitAll(taskArray);
+            CalculateParallelFor();
             value_ = CalculateValue(pointsIn_);
             endTime_ = DateTime.Now;
         }
 
-        private void StartTaskLock()
+        private void StartTask()
         {
             var data = GetPararellCalculationData();
             int iterations = data.Item2;
             int size = data.Item1;
             Task[] taskArray = new Task[size];
+            int[] results = new int[size];
             object _lock = new object();
             startTime_ = DateTime.Now;
             for (int i = 0; i < size; ++i)
             {
-                taskArray[i] = CalculateTaskLock(iterations, _lock);
+                int index = i;
+                taskArray[i] = Task.Run(() => CalculateTask(index, iterations, results));
             }
             Task.WaitAll(taskArray);
+            pointsIn_ = results.Sum();
             value_ = CalculateValue(pointsIn_);
             endTime_ = DateTime.Now;
         }
@@ -146,11 +132,13 @@ namespace MonteCarlo
             int size = data.Item1;
             startTime_ = DateTime.Now;
             Thread[] threadArray = new Thread[size];
+
             for (int i = 0; i < size; ++i)
             {
+                Random random = new Random(DateTime.Now.Millisecond);
                 threadArray[i] = new Thread(() =>
                 {
-                    CalculateMultiThread(iterations);
+                    CalculateMultiThread(iterations, random);
                 });
             }
             foreach (var thread in threadArray)
@@ -173,6 +161,7 @@ namespace MonteCarlo
         {
             pointsIn_ = 0;
             startTime_ = DateTime.Now;
+            random_ = new Random(DateTime.Now.Millisecond);
             for (int i = 0; i < Accuracy; ++i)
             {
                 pointsIn_ += MainCalcFunc();
@@ -181,35 +170,38 @@ namespace MonteCarlo
             endTime_ = DateTime.Now;
         }
 
-        private async Task<int> CalculateTaskAsync(int iterations)
+        private void CalculateParallelFor()
         {
+            object _lock = new object();
+            Parallel.For(0, Accuracy, i =>
+            {
+                double x, y;
+                lock (_lock)
+                {
+                    x = RandomPointX();
+                    y = RandomPointY();
+                }
+                pointsIn_ += FuncIn(x, y);
+            });
+        }
+
+        private void CalculateTask(int index, int iterations, int[] results)
+        {
+            Random random = new Random(DateTime.Now.Millisecond);
             int value = 0;
             for (int i = 0; i < iterations; ++i)
             {
-                value += await AsyncMainCalcFunc();
+                value += MainCalcFunc(random);
             }
-            return value;
+            results[index] = value;
         }
 
-        private async Task CalculateTaskLock(int size, object lockObj)
-        {
-            int value = 0;
-            for (int k = 0; k <= size; ++k)
-            {
-                value += await AsyncMainCalcFunc();
-            }
-            lock (lockObj)
-            {
-                pointsIn_ += value;
-            }
-        }
-
-        private void CalculateMultiThread(int iterations)
+        private void CalculateMultiThread(int iterations, Random random)
         {
             int value = 0;
             for (int i = 0; i <= iterations; ++i)
             {
-                value += MainCalcFunc();
+                value += MainCalcFunc(random);
             }
             pointsIn_ += value;
         }
@@ -235,12 +227,7 @@ namespace MonteCarlo
 
         private int MainCalcFunc() => FuncIn(RandomPointX(), RandomPointY());
 
-        private async Task<int> AsyncMainCalcFunc()
-        {
-            double x = await AsyncRandomPointX();
-            double y = await AsyncRandomPointY();
-            return FuncIn(x, y);
-        }
+        private int MainCalcFunc(Random random) => FuncIn(RandomPointX(random), RandomPointY(random));
 
         private float CalculateValue(int pointsIn) => (pointsIn / (float)Accuracy) * ((EndX - StartX) * (EndY - StartY));
 

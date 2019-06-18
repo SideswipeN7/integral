@@ -21,8 +21,8 @@ namespace MonteCarlo
             Console.WriteLine("==================================================");
             Console.WriteLine("Początek obliczeń");
             integral.Compute(ComputeType.SingleThread);
-            integral.Compute(ComputeType.TaskLock);
-            integral.Compute(ComputeType.TaskAsync);
+            integral.Compute(ComputeType.Task);
+            integral.Compute(ComputeType.ParallelFor);
             integral.Compute(ComputeType.MultiThread);
             Console.WriteLine("Koniec obliczeń");
             Console.WriteLine("==================================================");
